@@ -15,12 +15,9 @@ import (
 	"github.com/google/gopacket/pcap"
 )
 
-var ID int = 0
+var ID int64 = 0
 
 func main() {
-
-	// 初始化 SessionMap 使用 SessionInfo 结构体作为值类型
-	// junge.SessionMap = make(map[string]junge.SessionInfo)
 
 	// 获取本机所有网络接口的信息
 	interfaces, err := pcap.FindAllDevs()
@@ -66,9 +63,11 @@ func CaptureTraffic(ifaceName string) {
 	// 创建一个数据包源，用于接收数据包。
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 
+	mu.Lock()
+	defer mu.Unlock()
+
 	for packet := range packetSource.Packets() {
 		// 处理数据包
-
 		//把信息存入map中，并生成ID
 		SessionInfo := help.WriteByteSessionMap(packet, &ID, &mu)
 		fmt.Println(packet)
@@ -76,8 +75,12 @@ func CaptureTraffic(ifaceName string) {
 	}
 }
 
-func ProcessPacket(packet gopacket.Packet, sessionInfo junge.SessionInfo) {
+func ProcessPacket(packet gopacket.Packet, sessionInfo help.SessionInfo) {
 	// 在这里添加解析和整理数据包的逻辑
+	if sessionInfo.ID == 0 {
+		fmt.Println("Error: SessionInfo is empty")
+		return
+	}
 	// 你可能需要从 packet 中提取源地址、目标地址、协议、请求方法等信息
 	// 并将这些信息按照你的要求整理成字符串
 
