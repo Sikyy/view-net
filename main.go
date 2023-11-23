@@ -41,6 +41,7 @@ func main() {
 	fmt.Println("Shutting down...")
 }
 
+// 进行数据包捕获和处理
 func CaptureTraffic(ifaceName string) {
 
 	// 定义一个互斥锁
@@ -70,11 +71,13 @@ func CaptureTraffic(ifaceName string) {
 		// 处理数据包
 		//把信息存入map中，并生成ID
 		SessionInfo := help.WriteByteSessionMap(packet, &ID, &mu)
+
 		fmt.Println(packet)
 		ProcessPacket(packet, SessionInfo)
 	}
 }
 
+// 按照Surge请求查看器格式输出
 func ProcessPacket(packet gopacket.Packet, sessionInfo help.SessionInfo) {
 	// 在这里添加解析和整理数据包的逻辑
 	if sessionInfo.ID == 0 {
