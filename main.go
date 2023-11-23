@@ -84,11 +84,9 @@ func ProcessPacket(packet gopacket.Packet, sessionInfo help.SessionInfo) {
 		fmt.Println("Error: SessionInfo is empty")
 		return
 	}
-	// 你可能需要从 packet 中提取源地址、目标地址、协议、请求方法等信息
-	// 并将这些信息按照你的要求整理成字符串
 
 	// 以下是一个示例，你需要根据实际情况进行修改
-	fmt.Printf("ID: %d\n", sessionInfo.ID)
+	fmt.Printf("会话ID: %d\n", sessionInfo.ID)
 	fmt.Printf("日期: %s\n", time.Now().Format("15:04:05"))
 	fmt.Printf("客户端 状态: %s\n", junge.JungeTCPFinal(packet))
 	fmt.Printf("策略: %s\n", "jp")                // 这里需要替换为实际的策略
