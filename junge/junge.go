@@ -6,6 +6,7 @@ import (
 	"get-net/session"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -13,8 +14,7 @@ import (
 
 var mu sync.Mutex
 
-//判断TCP是否终止，如果终止返回true，否则返回false
-
+// 判断TCP是否终止，如果终止返回true，否则返回false
 func JungeTCPFinal(packet gopacket.Packet) string {
 	// 获取 TCP 层
 	tcpLayer := packet.Layer(layers.LayerTypeTCP)
@@ -28,6 +28,22 @@ func JungeTCPFinal(packet gopacket.Packet) string {
 	}
 	// 如果没有找到 FIN 标志，返回 false
 	return "活跃"
+}
+
+// 判断会话是否终止，如果终止返回当前时间，否则返回零值
+func JungeFinalTime(packet gopacket.Packet) time.Time {
+	// 获取 TCP 层
+	tcpLayer := packet.Layer(layers.LayerTypeTCP)
+	if tcpLayer != nil {
+		// 获取 TCP 层
+		tcp, _ := tcpLayer.(*layers.TCP)
+		// 判断是否是终止
+		if tcp.FIN == true {
+			return packet.Metadata().Timestamp
+		}
+	}
+	// 如果没有找到 FIN 标志
+	return packet.Metadata().Timestamp
 }
 
 // 判断数据包的会话是否重复，并将数据包的信息存入map中
@@ -88,16 +104,29 @@ func JudgeIDAndWriteByteSessionMap(packet gopacket.Packet, ID *int64, sessionMap
 	if exists {
 		// 如果是重复的数据包，使用前面的信息
 		fmt.Printf("数据包所属会话ID: %d (duplicate)\n", prevInfo.ID)
+
 		// 复制之前的流量信息
 		newSessionInfo.SessionUpTraffic = prevInfo.SessionUpTraffic + newSessionInfo.Bytes
 		newSessionInfo.SessionDownTraffic = prevInfo.SessionDownTraffic + newSessionInfo.Bytes
+		// 复制之前的 ID
 		newSessionInfo.ID = prevInfo.ID
+		// 在这里调用 JungeFinalTime 函数，更新结束时间
+		newSessionInfo.EndTime = JungeFinalTime(packet)
+		// 更新映射
 		sessionMap.Store(sessionKey, newSessionInfo)
+
 	} else {
 		// 如果不是重复的数据包，分配一个新的 ID
 		*ID++
 		newID := *ID
-		sessionMap.Store(sessionKey, session.SessionInfo{ID: newID})
+		// 获取当前时间戳
+		currentTime := time.Now()
+		// 设置开始时间
+		newSessionInfo.StartTime = currentTime
+		sessionMap.Store(sessionKey, session.SessionInfo{
+			ID:        newID,
+			StartTime: currentTime,
+		})
 		fmt.Printf("数据包所属会话ID: %d\n", newID)
 
 	}

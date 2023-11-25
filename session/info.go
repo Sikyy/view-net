@@ -2,6 +2,7 @@ package session
 
 import (
 	"sync"
+	"time"
 )
 
 // 在 help 包中定义一个全局的 sync.Map
@@ -23,4 +24,6 @@ type SessionInfo struct {
 	udpStatus          string  // UDP状态
 	SessionUpTraffic   float64 // 会话上行流量信息
 	SessionDownTraffic float64 // 会话下行
+	StartTime          time.Time
+	EndTime            time.Time
 }

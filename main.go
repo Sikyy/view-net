@@ -98,7 +98,8 @@ func ProcessPacket(packet gopacket.Packet, sessionInfo *session.SessionInfo) {
 	fmt.Printf("客户端 状态: %s\n", junge.JungeTCPFinal(packet))
 	fmt.Printf("策略: %s\n", "Normal") // 这里需要替换为实际的策略
 	fmt.Printf("上传: %s 下载: %s\n", traffic.FormatBytes(sessionInfo.SessionUpTraffic), traffic.FormatBytes(sessionInfo.SessionDownTraffic))
-	fmt.Printf("时长 方法: %d ms %s\n", 0, "HTTPS") // 这里需要替换为实际的时长和方法
-	fmt.Printf("地址: %s\n", "example.com")       // 这里需要替换为实际的地址
+	fmt.Printf("时长: %d ms, 方法: %s\n", sessionInfo.EndTime.Sub(sessionInfo.StartTime).Milliseconds(), "HTTPS")
+	fmt.Printf("开始时间: %s, 结束时间: %s\n", sessionInfo.StartTime, sessionInfo.EndTime)
+	fmt.Printf("地址: %s\n", "example.com") // 这里需要替换为实际的地址
 	fmt.Println("----")
 }
