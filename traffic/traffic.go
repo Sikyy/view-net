@@ -3,50 +3,34 @@ package traffic
 import (
 	"fmt"
 	"get-net/session"
+	"sync"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )
 
 // 处理数据包流量
-func HandleTraffic(packet gopacket.Packet, clientIP string, sessioninfo *session.SessionInfo) {
-	// 获取会话ID
-	sessionID := sessioninfo.ID
-	fmt.Println("Session ID:", sessionID)
-	// 检查会话ID是否为空
-	if sessionID != 0 {
-		// 如果不为空，说明会话已经存在，可以更新流量信息
-		//因为会话键是由源IP、目的IP、源端口、目的端口组成的，所以凭借ID无法获取会话
-		//需要别的方法，才能获取会话
-		//如果会话存在，更新流量信息
-		// 获取数据包字节数
-		byteCount := float64(packet.Metadata().Length)
-		// 判断是上行还是下行
-		isUpTraffic := JudgeUpOrDown(packet, clientIP)
-
-		if isUpTraffic {
-			// 是上行就记入上行部分
-			CountUpTraffic(sessioninfo, byteCount)
-			fmt.Println("此数据包为上行流量，数据大小为", byteCount, "bytes.")
-		} else {
-			// 是下行就记入下行部分
-			CountDownTraffic(sessioninfo, byteCount)
-			fmt.Println("此数据包为下行流量，数据大小为", byteCount, "bytes.")
-		}
-		fmt.Println("Session after:", sessioninfo)
+func HandleTraffic(packet gopacket.Packet, clientIP string, sessioninfo *session.SessionInfo, sessionMap *sync.Map) {
+	//防止空指针
+	if sessioninfo == nil {
+		return
 	}
+	// 获取数据包的长度
+	byteCount := sessioninfo.Bytes
+	// 判断数据包是上行还是下行
+	isUpTraffic := JudgeUpOrDown(packet, clientIP)
+	// 更新会话流量信息
+	UpdateTraffic(sessioninfo, byteCount, isUpTraffic)
 }
 
-// 统计上行部分
-func CountUpTraffic(session *session.SessionInfo, data float64) {
-	// 写入上行流量
-	session.SessionTraffic.UpTraffic += data
-}
+// UpdateTraffic 方法用于更新 SessionTraffic 的信息
+func UpdateTraffic(sessionInfo *session.SessionInfo, byteCount float64, isUpTraffic bool) {
 
-// 统计下行部分
-func CountDownTraffic(session *session.SessionInfo, data float64) {
-	// 写入下行流量
-	session.SessionTraffic.DownTraffic += data
+	if isUpTraffic {
+		sessionInfo.SessionUpTraffic += byteCount
+	} else {
+		sessionInfo.SessionDownTraffic += byteCount
+	}
 }
 
 // JudgeUpOrDown 传入一个定义的客户端的 IPv4 或 IPv6 地址，判断数据包是上行还是下行

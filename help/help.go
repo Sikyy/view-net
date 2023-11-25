@@ -17,6 +17,15 @@ func LoadSessionInfo(sessionMap *sync.Map, key string) (session.SessionInfo, boo
 	return value.(session.SessionInfo), true
 }
 
+// 使用 sync.Map 安全地加载 SessionInfo
+func LoadSessionInfoReturnPointer(sessionMap *sync.Map, key string) (*session.SessionInfo, bool) {
+	value, ok := sessionMap.Load(key)
+	if !ok {
+		return nil, false
+	}
+	return value.(*session.SessionInfo), true
+}
+
 // 使用 sync.Map 安全地存储 SessionInfo
 func StoreSessionInfo(sessionMap *sync.Map, key string, value session.SessionInfo) {
 	sessionMap.Store(key, value)

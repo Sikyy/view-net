@@ -76,16 +76,16 @@ func CaptureTraffic(ifaceName string) {
 		//把信息存入map中，并生成ID
 		SessionInfo := junge.JudgeIDAndWriteByteSessionMap(packet, &ID, &session.SessionMap)
 		//处理数据的流量相关
-		traffic.HandleTraffic(packet, clientIP, &SessionInfo)
+		traffic.HandleTraffic(packet, clientIP, &SessionInfo, &session.SessionMap)
 		//打印数据包原始信息
 		fmt.Println(packet)
 		//按照Surge请求查看器格式输出
-		ProcessPacket(packet, SessionInfo)
+		ProcessPacket(packet, &SessionInfo)
 	}
 }
 
 // 按照Surge请求查看器格式输出
-func ProcessPacket(packet gopacket.Packet, sessionInfo session.SessionInfo) {
+func ProcessPacket(packet gopacket.Packet, sessionInfo *session.SessionInfo) {
 	// 在这里添加解析和整理数据包的逻辑
 	if sessionInfo.ID == 0 {
 		fmt.Println("Error: SessionInfo is empty")
@@ -97,7 +97,7 @@ func ProcessPacket(packet gopacket.Packet, sessionInfo session.SessionInfo) {
 	fmt.Printf("日期: %s\n", time.Now().Format("15:04:05"))
 	fmt.Printf("客户端 状态: %s\n", junge.JungeTCPFinal(packet))
 	fmt.Printf("策略: %s\n", "Normal") // 这里需要替换为实际的策略
-	fmt.Printf("上传: %s 下载: %s\n", traffic.FormatBytes(sessionInfo.SessionTraffic.UpTraffic), traffic.FormatBytes(sessionInfo.SessionTraffic.DownTraffic))
+	fmt.Printf("上传: %s 下载: %s\n", traffic.FormatBytes(sessionInfo.SessionUpTraffic), traffic.FormatBytes(sessionInfo.SessionDownTraffic))
 	fmt.Printf("时长 方法: %d ms %s\n", 0, "HTTPS") // 这里需要替换为实际的时长和方法
 	fmt.Printf("地址: %s\n", "example.com")       // 这里需要替换为实际的地址
 	fmt.Println("----")

@@ -11,6 +11,8 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
+var mu sync.Mutex
+
 //判断TCP是否终止，如果终止返回true，否则返回false
 
 func JungeTCPFinal(packet gopacket.Packet) string {
@@ -35,17 +37,9 @@ func JudgeIDAndWriteByteSessionMap(packet gopacket.Packet, ID *int64, sessionMap
 	if ipLayer == nil {
 		// 如果不是IPv4，尝试获取IPv6层
 		ipLayer = packet.Layer(layers.LayerTypeIPv6)
-		// if ipLayer == nil {
-		// 	fmt.Println("Not an IPv4 or IPv6 packet")
-		// 	return
-		// }
 	}
 	// 获取传输层
 	transportLayer := packet.TransportLayer()
-	// if transportLayer == nil {
-	// 	fmt.Println("Not a TCP or UDP packet")
-	// 	return
-	// }
 
 	// 获取 IP 层和传输层
 	var srcIP, dstIP net.IP
@@ -68,42 +62,45 @@ func JudgeIDAndWriteByteSessionMap(packet gopacket.Packet, ID *int64, sessionMap
 		udp, _ := transportLayer.(*layers.UDP)
 		sessionKey = fmt.Sprintf("%s-%s-%d-%d", srcIP, dstIP, udp.SrcPort, udp.DstPort)
 	default:
-		// fmt.Println("Not a TCP or UDP packet")
-		// return
 	}
 
 	// 使用互斥锁确保在访问 sessionMap 时的原子性
-	mu := &sync.Mutex{}
 	mu.Lock()
 	defer mu.Unlock()
 
 	// 在循环外部调用一次 loadSessionInfo 函数，避免多次调用
 	prevInfo, exists := help.LoadSessionInfo(sessionMap, sessionKey)
 
+	// 创建新的 SessionInfo 对象，用于存储当前数据包的信息
+	newSessionInfo := session.SessionInfo{
+		Bytes:              float64(len(packet.Data())),
+		SrcIP:              srcIP.String(),
+		SrcPort:            help.GetSourcePort(transportLayer),
+		DstIP:              dstIP.String(),
+		DstPort:            help.GetDestinationPort(transportLayer),
+		Protocol:           help.GetProtocolName(transportLayer),
+		TCPStatus:          JungeTCPFinal(packet),
+		SessionUpTraffic:   0.0,
+		SessionDownTraffic: 0.0,
+	}
+
 	// 如果会话键存在于映射中，表示数据包是重复的
 	if exists {
 		// 如果是重复的数据包，使用前面的信息
 		fmt.Printf("数据包所属会话ID: %d (duplicate)\n", prevInfo.ID)
-		// 将重复的ID存入SessionMap
-		sessionMap.Store(sessionKey, session.SessionInfo{
-			ID:             prevInfo.ID,
-			SrcIP:          srcIP.String(),
-			SrcPort:        help.GetSourcePort(transportLayer),
-			DstIP:          dstIP.String(),
-			DstPort:        help.GetDestinationPort(transportLayer),
-			Protocol:       help.GetProtocolName(transportLayer),
-			TCPStatus:      JungeTCPFinal(packet),
-			SessionTraffic: session.SessionTrafficInfo{},
-		})
-		// 返回重复的SessionInfo
-		return prevInfo
+		// 复制之前的流量信息
+		newSessionInfo.SessionUpTraffic = prevInfo.SessionUpTraffic + newSessionInfo.Bytes
+		newSessionInfo.SessionDownTraffic = prevInfo.SessionDownTraffic + newSessionInfo.Bytes
+		newSessionInfo.ID = prevInfo.ID
+		sessionMap.Store(sessionKey, newSessionInfo)
 	} else {
 		// 如果不是重复的数据包，分配一个新的 ID
 		*ID++
 		newID := *ID
 		sessionMap.Store(sessionKey, session.SessionInfo{ID: newID})
 		fmt.Printf("数据包所属会话ID: %d\n", newID)
-		// 返回新分配的SessionInfo
-		return session.SessionInfo{ID: newID}
+
 	}
+	// 返回新的 SessionInfo 对象
+	return newSessionInfo
 }
