@@ -2,8 +2,8 @@ package traffic
 
 import (
 	"fmt"
-	"get-net/session"
 	"sync"
+	"view-net/session"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"

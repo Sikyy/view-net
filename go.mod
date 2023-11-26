@@ -1,4 +1,4 @@
-module get-net
+module view-net
 
 go 1.21.3
 

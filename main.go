@@ -2,16 +2,17 @@ package main
 
 import (
 	"fmt"
-	"get-net/help"
-	"get-net/junge"
-	"get-net/session"
-	"get-net/traffic"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
+	"view-net/help"
+	"view-net/junge"
+	packttime "view-net/packettime"
+	"view-net/session"
+	"view-net/traffic"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
@@ -77,6 +78,8 @@ func CaptureTraffic(ifaceName string) {
 		SessionInfo := junge.JudgeIDAndWriteByteSessionMap(packet, &ID, &session.SessionMap)
 		//处理数据的流量相关
 		traffic.HandleTraffic(packet, clientIP, &SessionInfo, &session.SessionMap)
+		//处理时间相关
+		packttime.HandleTime(packet, &SessionInfo, &session.SessionMap)
 		//打印数据包原始信息
 		fmt.Println(packet)
 		//按照Surge请求查看器格式输出
@@ -95,11 +98,11 @@ func ProcessPacket(packet gopacket.Packet, sessionInfo *session.SessionInfo) {
 	// 以下是一个示例，你需要根据实际情况进行修改
 	fmt.Printf("会话ID: %d\n", sessionInfo.ID)
 	fmt.Printf("日期: %s\n", time.Now().Format("15:04:05"))
-	fmt.Printf("客户端 状态: %s\n", junge.JungeTCPFinal(packet))
+	fmt.Printf("客户端 状态: %s\n", sessionInfo.TCPStatus)
 	fmt.Printf("策略: %s\n", "Normal") // 这里需要替换为实际的策略
 	fmt.Printf("上传: %s 下载: %s\n", traffic.FormatBytes(sessionInfo.SessionUpTraffic), traffic.FormatBytes(sessionInfo.SessionDownTraffic))
-	fmt.Printf("时长: %d ms, 方法: %s\n", sessionInfo.EndTime.Sub(sessionInfo.StartTime).Milliseconds(), "HTTPS")
-	fmt.Printf("开始时间: %s, 结束时间: %s\n", sessionInfo.StartTime, sessionInfo.EndTime)
+	fmt.Printf("时长: %d ms, 方法: %s\n", time.Since(sessionInfo.StartTime).Milliseconds(), "HTTPS")
+	fmt.Printf("开始时间: %v, 结束时间: %v\n", sessionInfo.StartTime, sessionInfo.EndTime)
 	fmt.Printf("地址: %s\n", "example.com") // 这里需要替换为实际的地址
 	fmt.Println("----")
 }
