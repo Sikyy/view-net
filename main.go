@@ -19,6 +19,7 @@ import (
 )
 
 var ID int64 = 0
+var payload []byte
 
 func main() {
 
@@ -53,7 +54,7 @@ func CaptureTraffic(ifaceName string) {
 	// 打开网络接口，开始捕获数据包
 	handle, err := pcap.OpenLive(
 		ifaceName,         // 网络接口名
-		1600,              // 每个数据包的最大长度，1600 字节可以覆盖大多数以太网帧
+		65535,             // 每个数据包的最大长度
 		true,              // 设置为 true，表示开启混杂模式
 		pcap.BlockForever, //表示永远阻塞，不会超时返回。而使用负数时间，可以认为是一个“非常大的超时时间”，基本上达到了永远阻塞的效果
 	)
@@ -74,12 +75,16 @@ func CaptureTraffic(ifaceName string) {
 
 	for packet := range packetSource.Packets() {
 		// 处理数据包
-		//把信息存入map中，并生成ID
+		//把信息存入map中，并生成ID，计算会话开始时间，实现会话初始化
 		SessionInfo := junge.JudgeIDAndWriteByteSessionMap(packet, &ID, &session.SessionMap)
+		//处理数据的Host，请求方法，请求头
+		// host.HandleHTTPPorHTTPSPacket(packet) //, &SessionInfo, &session.SessionMap
 		//处理数据的流量相关
 		traffic.HandleTraffic(packet, clientIP, &SessionInfo, &session.SessionMap)
 		//处理时间相关
 		packttime.HandleTime(packet, &SessionInfo, &session.SessionMap)
+		//处理数据的Host和请求方法
+		// host.ExtractProtocolAndHostFromPacket(packet, &SessionInfo, &session.SessionMap)
 		//打印数据包原始信息
 		fmt.Println(packet)
 		//按照Surge请求查看器格式输出
@@ -101,8 +106,8 @@ func ProcessPacket(packet gopacket.Packet, sessionInfo *session.SessionInfo) {
 	fmt.Printf("客户端 状态: %s\n", sessionInfo.TCPStatus)
 	fmt.Printf("策略: %s\n", "Normal") // 这里需要替换为实际的策略
 	fmt.Printf("上传: %s 下载: %s\n", traffic.FormatBytes(sessionInfo.SessionUpTraffic), traffic.FormatBytes(sessionInfo.SessionDownTraffic))
-	fmt.Printf("时长: %d ms, 方法: %s\n", time.Since(sessionInfo.StartTime).Milliseconds(), "HTTPS")
+	fmt.Printf("时长: %v ms, 方法: %s\n", sessionInfo.EndTime.Sub(sessionInfo.StartTime), sessionInfo.Method)
 	fmt.Printf("开始时间: %v, 结束时间: %v\n", sessionInfo.StartTime, sessionInfo.EndTime)
-	fmt.Printf("地址: %s\n", "example.com") // 这里需要替换为实际的地址
+	fmt.Printf("地址: %s\n", sessionInfo.Host)
 	fmt.Println("----")
 }

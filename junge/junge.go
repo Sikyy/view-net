@@ -1,8 +1,12 @@
 package junge
 
 import (
+	"errors"
 	"fmt"
 	"net"
+	"net/url"
+	"regexp"
+	"strings"
 	"sync"
 	"view-net/help"
 	"view-net/session"
@@ -53,6 +57,8 @@ func JudgeIDAndWriteByteSessionMap(packet gopacket.Packet, ID *int64, sessionMap
 
 	// 创建会话键，在这里判断数据包是否重复
 	var sessionKey string
+	var host string
+	var method string
 	switch transportLayer.(type) {
 	case *layers.TCP:
 		tcp, _ := transportLayer.(*layers.TCP)
@@ -82,6 +88,8 @@ func JudgeIDAndWriteByteSessionMap(packet gopacket.Packet, ID *int64, sessionMap
 		TCPStatus:          JungeTCPFinal(packet),
 		SessionUpTraffic:   0.0,
 		SessionDownTraffic: 0.0,
+		Host:               host,
+		Method:             method,
 	}
 
 	// 如果会话键存在于映射中，表示数据包是重复的
@@ -113,4 +121,103 @@ func JudgeIDAndWriteByteSessionMap(packet gopacket.Packet, ID *int64, sessionMap
 	}
 	// 返回新的 SessionInfo 对象
 	return newSessionInfo
+}
+
+// 判断是HTTP还是HTTPS请求
+func JudgeHTTPorHTTPS(packet gopacket.Packet) string {
+	// 寻找 TCP 层
+	tcpLayer := packet.Layer(layers.LayerTypeTCP)
+	if tcpLayer != nil {
+		tcp, ok := tcpLayer.(*layers.TCP)
+		if ok {
+			// 获取 TCP 层的源端口和目标端口
+			dstPort := tcp.DstPort
+			if dstPort == 80 {
+				return "HTTP"
+			}
+			if dstPort == 443 {
+				return "HTTPS"
+			}
+		}
+	}
+	return "Unknown"
+}
+
+// 解析 HTTP 请求，获取请求方法、Host 和路径
+func ParseHTTPRequest(request string) (method, host, path string, err error) {
+	// 按空格分割请求行
+	parts := strings.Split(request, " ")
+	if len(parts) != 3 {
+		err = errors.New("Invalid HTTP request format")
+		return
+	}
+
+	method = parts[0]
+	// 解析路径部分
+	u, err := url.Parse(parts[1])
+	if err != nil {
+		return
+	}
+
+	host = u.Hostname()
+	path = u.Path
+
+	return
+}
+
+// ExtractHTTPMethodHostPathFromRequest 从 HTTP 请求中提取方法、主机和路径
+func ExtractHTTPMethodHostPathFromRequest(request string) (string, string, string) {
+	fmt.Println("Request String:", request)
+	// 使用正则表达式匹配 HTTP 请求行
+	re := regexp.MustCompile(`^(?P<Method>[A-Z]+)\s+(?P<Path>/[^\s]+)\s+HTTP/\d\.\d\r\nHost:\s+(?P<Host>[^:\s]+)$`)
+	matches := re.FindStringSubmatch(request)
+	if len(matches) == 0 {
+		// 没有匹配到，返回空字符串
+		return "", "", ""
+	}
+
+	// 使用命名捕获组提取匹配项
+	method := matches[re.SubexpIndex("Method")]
+	path := matches[re.SubexpIndex("Path")]
+	host := matches[re.SubexpIndex("Host")]
+
+	return method, host, path
+}
+
+// 从 TLS 握手中提取 Host
+func ExtractHostFromTLS(packet gopacket.Packet) string {
+	// 寻找 TLS 层
+	tlsLayer := packet.Layer(layers.LayerTypeTLS)
+	if tlsLayer != nil {
+		tls, ok := tlsLayer.(*layers.TLS)
+		if ok {
+			// 获取 TLS 握手消息
+			payload := tls.Payload
+			if len(payload()) > 0 {
+				// 将负载转换为 []byte
+				payloadBytes := payload()
+				// 提取 ServerName 扩展中的主机名
+				host := ExtractHostFromTLSHandshake(payloadBytes)
+				return host
+			}
+		}
+	}
+	return ""
+}
+
+// 从 TLS 握手消息中提取主机名
+func ExtractHostFromTLSHandshake(handshake []byte) string {
+	// 假设 ServerName 扩展在握手消息中的固定位置
+	const extensionOffset = 43
+
+	// 提取 ServerName 扩展中的主机名
+	if len(handshake) > extensionOffset+2 {
+		extensionLength := int(handshake[extensionOffset])<<8 + int(handshake[extensionOffset+1])
+		if len(handshake) > extensionOffset+2+extensionLength {
+			serverName := string(handshake[extensionOffset+2 : extensionOffset+2+extensionLength])
+			return serverName
+		}
+	}
+
+	return ""
 }
