@@ -5,7 +5,7 @@ import (
 	"log"
 	"sync"
 	"testing"
-	"view-net/host"
+	"view-net/junge"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
@@ -42,6 +42,9 @@ func GetPack(ifaceName string) {
 	// 获取包源
 	source := gopacket.NewPacketSource(handler, handler.LinkType())
 	for packet := range source.Packets() {
-		host.HandleHTTPPorHTTPSPacket(packet)
+		host, method := junge.HandleHTTPPorHTTPSPacket(packet)
+		fmt.Println("--------------------------------------------------------------------")
+		fmt.Println("会话Host:", host)
+		fmt.Println("会话Method:", method)
 	}
 }

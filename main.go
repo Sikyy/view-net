@@ -8,9 +8,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"view-net/help"
 	"view-net/junge"
-	packttime "view-net/packettime"
 	"view-net/session"
 	"view-net/traffic"
 
@@ -68,7 +66,7 @@ func CaptureTraffic(ifaceName string) {
 	// 创建一个数据包源，用于接收数据包。
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	// 获取本机的 IPv4 地址
-	clientIP := help.GetClientIP()
+	// clientIP := help.GetClientIP()
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -77,15 +75,13 @@ func CaptureTraffic(ifaceName string) {
 		// 处理数据包
 		//把信息存入map中，并生成ID，计算会话开始时间，实现会话初始化
 		SessionInfo := junge.JudgeIDAndWriteByteSessionMap(packet, &ID, &session.SessionMap)
-		//处理数据的Host，请求方法，请求头
-		// host.HandleHTTPPorHTTPSPacket(packet) //, &SessionInfo, &session.SessionMap
-		//处理数据的流量相关
-		traffic.HandleTraffic(packet, clientIP, &SessionInfo, &session.SessionMap)
-		//处理时间相关
-		packttime.HandleTime(packet, &SessionInfo, &session.SessionMap)
-		//处理数据的Host和请求方法
-		// host.ExtractProtocolAndHostFromPacket(packet, &SessionInfo, &session.SessionMap)
-		//打印数据包原始信息
+		// //处理数据的Host，请求方法，请求头
+		// junge.HandleHTTPPorHTTPSPacket(packet) //, &SessionInfo, &session.SessionMap
+		// //处理数据的流量相关
+		// traffic.HandleTraffic(packet, clientIP, &SessionInfo, &session.SessionMap)
+		// //处理时间相关
+		// packttime.HandleTime(packet, &SessionInfo, &session.SessionMap)
+		// //打印数据包原始信息
 		fmt.Println(packet)
 		//按照Surge请求查看器格式输出
 		ProcessPacket(packet, &SessionInfo)

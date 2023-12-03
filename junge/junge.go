@@ -1,10 +1,8 @@
 package junge
 
 import (
-	"errors"
 	"fmt"
 	"net"
-	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -57,8 +55,6 @@ func JudgeIDAndWriteByteSessionMap(packet gopacket.Packet, ID *int64, sessionMap
 
 	// 创建会话键，在这里判断数据包是否重复
 	var sessionKey string
-	var host string
-	var method string
 	switch transportLayer.(type) {
 	case *layers.TCP:
 		tcp, _ := transportLayer.(*layers.TCP)
@@ -88,8 +84,6 @@ func JudgeIDAndWriteByteSessionMap(packet gopacket.Packet, ID *int64, sessionMap
 		TCPStatus:          JungeTCPFinal(packet),
 		SessionUpTraffic:   0.0,
 		SessionDownTraffic: 0.0,
-		Host:               host,
-		Method:             method,
 	}
 
 	// 如果会话键存在于映射中，表示数据包是重复的
@@ -104,6 +98,10 @@ func JudgeIDAndWriteByteSessionMap(packet gopacket.Packet, ID *int64, sessionMap
 		newSessionInfo.ID = prevInfo.ID
 		// 复制之前的开始时间
 		newSessionInfo.StartTime = prevInfo.StartTime
+		// 复制之前的 Host
+		newSessionInfo.Host = prevInfo.Host
+		// 复制之前的 Method
+		newSessionInfo.Method = prevInfo.Method
 		// 更新映射
 		sessionMap.Store(sessionKey, newSessionInfo)
 
@@ -114,6 +112,11 @@ func JudgeIDAndWriteByteSessionMap(packet gopacket.Packet, ID *int64, sessionMap
 		newSessionInfo.ID = newID
 		// 将当前数据包时间赋值给 SessionTime.StartTime
 		newSessionInfo.StartTime = packet.Metadata().Timestamp
+		// 如果当前数据包的Host 和 Method不为空，将当前数据包的 Host 和 Method 赋值给 SessionInfo
+		if host, method := HandleHTTPPorHTTPSPacket(packet); host != "" && method != "" {
+			newSessionInfo.Host = host
+			newSessionInfo.Method = method
+		}
 		// 将新的 SessionInfo 对象存入映射
 		sessionMap.Store(sessionKey, newSessionInfo)
 		fmt.Printf("数据包所属会话ID: %d\n", newID)
@@ -123,101 +126,123 @@ func JudgeIDAndWriteByteSessionMap(packet gopacket.Packet, ID *int64, sessionMap
 	return newSessionInfo
 }
 
-// 判断是HTTP还是HTTPS请求
-func JudgeHTTPorHTTPS(packet gopacket.Packet) string {
-	// 寻找 TCP 层
-	tcpLayer := packet.Layer(layers.LayerTypeTCP)
-	if tcpLayer != nil {
-		tcp, ok := tcpLayer.(*layers.TCP)
-		if ok {
-			// 获取 TCP 层的源端口和目标端口
-			dstPort := tcp.DstPort
-			if dstPort == 80 {
-				return "HTTP"
-			}
-			if dstPort == 443 {
-				return "HTTPS"
+func HandleHTTPPorHTTPSPacket(packet gopacket.Packet) (string, string) {
+	var host, method string
+	// 获取以太网头部信息
+	ethernetPacket, _ := packet.Layer(layers.LayerTypeEthernet).(*layers.Ethernet)
+	// 获取 TCP 层
+	tcp, _ := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
+
+	// 获取 IPv4 层
+	ipLayer := packet.Layer(layers.LayerTypeIPv4)
+	if ipLayer == nil {
+		// 如果不是 IPv4，尝试获取 IPv6 层
+		ipLayer = packet.Layer(layers.LayerTypeIPv6)
+	}
+
+	var srcIP, dstIP net.IP
+	var protocol layers.IPProtocol
+
+	switch ipLayer := ipLayer.(type) {
+	case *layers.IPv4:
+		srcIP = ipLayer.SrcIP
+		dstIP = ipLayer.DstIP
+		protocol = ipLayer.Protocol
+	case *layers.IPv6:
+		srcIP = ipLayer.SrcIP
+		dstIP = ipLayer.DstIP
+		protocol = ipLayer.NextHeader
+	}
+
+	if isHTTPS(packet) {
+		fmt.Println("--------------------------------------------------------------------")
+		fmt.Println("方法为:HTTPS")
+		fmt.Println("Source MAC: ", ethernetPacket.SrcMAC)
+		fmt.Println("Destination MAC: ", ethernetPacket.DstMAC)
+		fmt.Printf("From %s to %s\n", srcIP, dstIP)
+		fmt.Println("Protocol: ", protocol)
+		fmt.Printf("From port %d to %d\n", tcp.SrcPort, tcp.DstPort)
+		fmt.Println("Sequence number: ", tcp.Seq)
+		host = "HTTPS:443"
+		method = "HTTPS"
+	} else if isHTTP(packet) {
+		applicationLayer := packet.ApplicationLayer()
+		payload := string(applicationLayer.Payload())
+		fmt.Println("--------------------------------------------------------------------")
+		fmt.Println("方法为:HTTP")
+		reg := regexp.MustCompile(`(?s)(GET|POST|PUT|DELETE|HEAD|TRACE|OPTIONS) (.*?) HTTP.*Host: (.*?)\n`)
+		if reg == nil {
+			fmt.Println("MustCompile err")
+			return "MustCompile", "err"
+		}
+		result := reg.FindStringSubmatch(payload)
+		if len(result) == 4 {
+			result[2] = strings.TrimSpace(result[2])
+			result[3] = strings.TrimSpace(result[3])
+			url := "http://" + result[3] + result[2]
+			fmt.Println("--------------------------------------------------------------------")
+			fmt.Println("请求头:", result[0])
+			fmt.Println("请求方法: ", result[1])
+			fmt.Println("Source MAC: ", ethernetPacket.SrcMAC)
+			fmt.Println("Destination MAC: ", ethernetPacket.DstMAC)
+			fmt.Printf("From %s to %s\n", srcIP, dstIP)
+			fmt.Println("Protocol: ", protocol)
+			fmt.Printf("From port %d to %d\n", tcp.SrcPort, tcp.DstPort)
+			fmt.Println("Sequence number: ", tcp.Seq)
+			fmt.Println("url:", url)
+			fmt.Println("host:", result[3])
+			host = result[3]
+			method = result[1]
+		}
+	} else {
+		fmt.Println("--------------------------------------------------------------------")
+		fmt.Println("方法为:TCP")
+		host = "???"
+		method = "TCP"
+	}
+
+	return host, method
+}
+
+// 监测是否是HTTPS，先检测端口，再检测layers.LayerTypeTLS是否包含TLS握手
+func isHTTPS(packet gopacket.Packet) bool {
+	// 分析数据包
+	transportLayer := packet.TransportLayer()
+
+	// 检查是否为 TCP 协议
+	if transportLayer != nil && transportLayer.LayerType() == layers.LayerTypeTCP {
+		tcp := transportLayer.(*layers.TCP)
+
+		// 检查是否为 HTTPS 流量（默认端口为 443）
+		if tcp.DstPort == 443 || tcp.SrcPort == 443 {
+			fmt.Println("Detected HTTPS traffic.")
+			return true
+		}
+	}
+	return false
+}
+
+// 监测是否是HTTP，先检测是否是TCP，再检测是否包含HTTP请求方法
+func isHTTP(packet gopacket.Packet) bool {
+	// 分析数据包
+	transportLayer := packet.TransportLayer()
+
+	// 检查是否为TCP流量
+	if transportLayer != nil && transportLayer.LayerType() == layers.LayerTypeTCP {
+		tcp := transportLayer.(*layers.TCP)
+
+		// 检查是否为HTTP端口
+		if tcp.DstPort == 80 {
+			applicationLayer := packet.ApplicationLayer()
+
+			// 检查是否包含HTTP请求方法
+			if applicationLayer != nil {
+				payload := string(applicationLayer.Payload())
+				if strings.HasPrefix(payload, "GET") || strings.HasPrefix(payload, "POST") || strings.HasPrefix(payload, "PUT") || strings.HasPrefix(payload, "DELETE") || strings.HasPrefix(payload, "HEAD") || strings.HasPrefix(payload, "TRACE") || strings.HasPrefix(payload, "OPTIONS") {
+					return true
+				}
 			}
 		}
 	}
-	return "Unknown"
-}
-
-// 解析 HTTP 请求，获取请求方法、Host 和路径
-func ParseHTTPRequest(request string) (method, host, path string, err error) {
-	// 按空格分割请求行
-	parts := strings.Split(request, " ")
-	if len(parts) != 3 {
-		err = errors.New("Invalid HTTP request format")
-		return
-	}
-
-	method = parts[0]
-	// 解析路径部分
-	u, err := url.Parse(parts[1])
-	if err != nil {
-		return
-	}
-
-	host = u.Hostname()
-	path = u.Path
-
-	return
-}
-
-// ExtractHTTPMethodHostPathFromRequest 从 HTTP 请求中提取方法、主机和路径
-func ExtractHTTPMethodHostPathFromRequest(request string) (string, string, string) {
-	fmt.Println("Request String:", request)
-	// 使用正则表达式匹配 HTTP 请求行
-	re := regexp.MustCompile(`^(?P<Method>[A-Z]+)\s+(?P<Path>/[^\s]+)\s+HTTP/\d\.\d\r\nHost:\s+(?P<Host>[^:\s]+)$`)
-	matches := re.FindStringSubmatch(request)
-	if len(matches) == 0 {
-		// 没有匹配到，返回空字符串
-		return "", "", ""
-	}
-
-	// 使用命名捕获组提取匹配项
-	method := matches[re.SubexpIndex("Method")]
-	path := matches[re.SubexpIndex("Path")]
-	host := matches[re.SubexpIndex("Host")]
-
-	return method, host, path
-}
-
-// 从 TLS 握手中提取 Host
-func ExtractHostFromTLS(packet gopacket.Packet) string {
-	// 寻找 TLS 层
-	tlsLayer := packet.Layer(layers.LayerTypeTLS)
-	if tlsLayer != nil {
-		tls, ok := tlsLayer.(*layers.TLS)
-		if ok {
-			// 获取 TLS 握手消息
-			payload := tls.Payload
-			if len(payload()) > 0 {
-				// 将负载转换为 []byte
-				payloadBytes := payload()
-				// 提取 ServerName 扩展中的主机名
-				host := ExtractHostFromTLSHandshake(payloadBytes)
-				return host
-			}
-		}
-	}
-	return ""
-}
-
-// 从 TLS 握手消息中提取主机名
-func ExtractHostFromTLSHandshake(handshake []byte) string {
-	// 假设 ServerName 扩展在握手消息中的固定位置
-	const extensionOffset = 43
-
-	// 提取 ServerName 扩展中的主机名
-	if len(handshake) > extensionOffset+2 {
-		extensionLength := int(handshake[extensionOffset])<<8 + int(handshake[extensionOffset+1])
-		if len(handshake) > extensionOffset+2+extensionLength {
-			serverName := string(handshake[extensionOffset+2 : extensionOffset+2+extensionLength])
-			return serverName
-		}
-	}
-
-	return ""
+	return false
 }
