@@ -43,7 +43,7 @@ func GetPack(ifaceName string) {
 	source := gopacket.NewPacketSource(handler, handler.LinkType())
 	for packet := range source.Packets() {
 		host, method := junge.HandleHTTPPorHTTPSPacket(packet)
-		fmt.Println("--------------------------------------------------------------------")
+		// fmt.Println("--------------------------------------------------------------------")
 		fmt.Println("会话Host:", host)
 		fmt.Println("会话Method:", method)
 	}

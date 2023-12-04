@@ -3,6 +3,7 @@ package junge
 import (
 	"fmt"
 	"net"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -132,6 +133,8 @@ func HandleHTTPPorHTTPSPacket(packet gopacket.Packet) (string, string) {
 	ethernetPacket, _ := packet.Layer(layers.LayerTypeEthernet).(*layers.Ethernet)
 	// 获取 TCP 层
 	tcp, _ := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
+	// 获取 UDP 层
+	udp, _ := packet.Layer(layers.LayerTypeUDP).(*layers.UDP)
 
 	// 获取 IPv4 层
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
@@ -154,51 +157,102 @@ func HandleHTTPPorHTTPSPacket(packet gopacket.Packet) (string, string) {
 		protocol = ipLayer.NextHeader
 	}
 
-	if isHTTPS(packet) {
-		fmt.Println("--------------------------------------------------------------------")
-		fmt.Println("方法为:HTTPS")
-		fmt.Println("Source MAC: ", ethernetPacket.SrcMAC)
-		fmt.Println("Destination MAC: ", ethernetPacket.DstMAC)
-		fmt.Printf("From %s to %s\n", srcIP, dstIP)
-		fmt.Println("Protocol: ", protocol)
-		fmt.Printf("From port %d to %d\n", tcp.SrcPort, tcp.DstPort)
-		fmt.Println("Sequence number: ", tcp.Seq)
-		host = "HTTPS:443"
-		method = "HTTPS"
-	} else if isHTTP(packet) {
-		applicationLayer := packet.ApplicationLayer()
-		payload := string(applicationLayer.Payload())
-		fmt.Println("--------------------------------------------------------------------")
-		fmt.Println("方法为:HTTP")
-		reg := regexp.MustCompile(`(?s)(GET|POST|PUT|DELETE|HEAD|TRACE|OPTIONS) (.*?) HTTP.*Host: (.*?)\n`)
-		if reg == nil {
-			fmt.Println("MustCompile err")
-			return "MustCompile", "err"
-		}
-		result := reg.FindStringSubmatch(payload)
-		if len(result) == 4 {
-			result[2] = strings.TrimSpace(result[2])
-			result[3] = strings.TrimSpace(result[3])
-			url := "http://" + result[3] + result[2]
+	// 处理 TCP 流量
+	if tcp != nil {
+		if isHTTPS(packet) {
 			fmt.Println("--------------------------------------------------------------------")
-			fmt.Println("请求头:", result[0])
-			fmt.Println("请求方法: ", result[1])
+			fmt.Println("方法为:HTTPS")
+			fmt.Printf("确认号: %d\n", tcp.Ack)
 			fmt.Println("Source MAC: ", ethernetPacket.SrcMAC)
 			fmt.Println("Destination MAC: ", ethernetPacket.DstMAC)
 			fmt.Printf("From %s to %s\n", srcIP, dstIP)
 			fmt.Println("Protocol: ", protocol)
 			fmt.Printf("From port %d to %d\n", tcp.SrcPort, tcp.DstPort)
 			fmt.Println("Sequence number: ", tcp.Seq)
-			fmt.Println("url:", url)
-			fmt.Println("host:", result[3])
-			host = result[3]
-			method = result[1]
+			host = "HTTPS:443"
+			method = "HTTPS"
+		} else if isHTTP(packet) {
+			applicationLayer := packet.ApplicationLayer()
+			payload := string(applicationLayer.Payload())
+			fmt.Println("--------------------------------------------------------------------")
+			fmt.Println("方法为:HTTP")
+			reg := regexp.MustCompile(`(?s)(GET|POST|PUT|DELETE|HEAD|TRACE|OPTIONS) (.*?) HTTP.*Host: (.*?)\n`)
+			if reg == nil {
+				fmt.Println("MustCompile err")
+				return "MustCompile", "err"
+			}
+			result := reg.FindStringSubmatch(payload)
+			if len(result) == 4 {
+				result[2] = strings.TrimSpace(result[2])
+				result[3] = strings.TrimSpace(result[3])
+				url := "http://" + result[3] + result[2]
+				fmt.Println("--------------------------------------------------------------------")
+				fmt.Println("请求头:", result[0])
+				fmt.Println("请求方法: ", result[1])
+				fmt.Printf("确认号: %d\n", tcp.Ack)
+				fmt.Println("Source MAC: ", ethernetPacket.SrcMAC)
+				fmt.Println("Destination MAC: ", ethernetPacket.DstMAC)
+				fmt.Printf("From %s to %s\n", srcIP, dstIP)
+				fmt.Println("Protocol: ", protocol)
+				fmt.Printf("From port %d to %d\n", tcp.SrcPort, tcp.DstPort)
+				fmt.Println("Sequence number: ", tcp.Seq)
+				fmt.Println("url:", url)
+				fmt.Println("host:", result[3])
+				host = result[3]
+				method = result[1]
+			}
+		} else {
+			fmt.Println("--------------------------------------------------------------------")
+			fmt.Println("方法为:TCP")
+			// fmt.Printf("源 MAC 地址: %s\n", ethernetPacket.SrcMAC)
+			// fmt.Printf("目标 MAC 地址: %s\n", ethernetPacket.DstMAC)
+			fmt.Printf("确认号: %d\n", tcp.Ack)
+			fmt.Printf("从 %s 到 %s\n", srcIP, dstIP)
+			fmt.Printf("协议: %s\n", protocol)
+			fmt.Printf("从端口 %d 到端口 %d\n", tcp.SrcPort, tcp.DstPort)
+			fmt.Printf("序列号: %d\n", tcp.Seq)
+
+			// 获取本地主机名
+			hostname, err := os.Hostname()
+			if err == nil {
+				fmt.Printf("本地主机名: %s\n", hostname)
+				// 显示端口号
+				fmt.Printf("目标端口: %d\n", tcp.DstPort)
+
+				host = fmt.Sprintf("%s:%d", hostname, tcp.DstPort)
+			} else {
+				fmt.Printf("无法获取本地主机名: %v\n", err)
+				host = fmt.Sprintf("N/A:%d", tcp.DstPort)
+			}
+
+			// 显示端口号
+			fmt.Printf("目标端口: %d\n", tcp.DstPort)
+
+			host = fmt.Sprintf("%s:%d", hostname, tcp.DstPort)
+			method = "TCP"
 		}
-	} else {
+		return host, method
+
+	} else if udp != nil {
+		// 处理 UDP 流量
 		fmt.Println("--------------------------------------------------------------------")
-		fmt.Println("方法为:TCP")
-		host = "???"
-		method = "TCP"
+		fmt.Println("方法为:UDP")
+		// 处理 UDP 流量的逻辑，你可以根据需要进行修改
+		// ...
+		// 检查是否有源和目标端口
+		if udp.SrcPort != layers.UDPPort(0) && udp.DstPort != layers.UDPPort(0) {
+			fmt.Printf("从端口 %d 到端口 %d\n", udp.SrcPort, udp.DstPort)
+			host = fmt.Sprintf("%s:%d", dstIP, udp.DstPort)
+		} else {
+			fmt.Println("UDP 没有源或目标端口信息")
+			host = "N/A"
+		}
+
+		method = "UDP"
+	} else {
+		fmt.Println("不是 TCP 或 UDP 流量")
+		host = "N/A"
+		method = "N/A"
 	}
 
 	return host, method
